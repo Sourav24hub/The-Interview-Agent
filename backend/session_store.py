@@ -97,6 +97,12 @@ def is_current_q_probed(session_id: str) -> bool:
     return sessions[session_id]["current_q_probed"]
 
 
+def mark_current_q_probed(session_id: str) -> None:
+    """Mark current question topic as probed so the engine advances on the next turn."""
+    if session_id in sessions:
+        sessions[session_id]["current_q_probed"] = True
+
+
 # ---------------------------------------------------------------------------
 # Weak-answer tracking
 # ---------------------------------------------------------------------------

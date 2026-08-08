@@ -248,26 +248,36 @@ def generate_question_plan(candidate: Candidate) -> List[InterviewQuestion]:
     plan: List[InterviewQuestion] = []
     days_covered: set[int] = set()
 
-    # --- Priority 1: first-try (max 3 days to avoid bloat) ---
-    for m in first_try[:3]:
+    MIN_QUESTIONS = 8
+    MAX_QUESTIONS = 10   # hard cap — interview covers 10 questions, 10-14 turns with probes
+
+    # --- Priority 1: first-try (max 2 days × 2 questions = 4) ---
+    for m in first_try[:2]:
+        if len(plan) >= MAX_QUESTIONS:
+            break
         day = day_index.get(m.day)
         if not day:
             continue
         qs = _depth_questions(day, m)
-        plan.extend(qs)
+        # Only take 1 depth question per first-try day to preserve room for diversity
+        plan.append(qs[0])
         days_covered.add(m.day)
 
-    # --- Priority 2: struggle passes ---
+    # --- Priority 2: struggle passes (1 probe per day, no counter in plan — handled live) ---
     for m in struggle:
+        if len(plan) >= MAX_QUESTIONS:
+            break
         day = day_index.get(m.day)
         if not day:
             continue
-        qs = _struggle_questions(day, m)
-        plan.extend(qs)
+        probe = _struggle_questions(day, m)[0]   # probe only; counter fired live by engine
+        plan.append(probe)
         days_covered.add(m.day)
 
     # --- Priority 3: skipped days ---
     for m in skipped:
+        if len(plan) >= MAX_QUESTIONS:
+            break
         day = day_index.get(m.day)
         if not day:
             continue
@@ -276,6 +286,8 @@ def generate_question_plan(candidate: Candidate) -> List[InterviewQuestion]:
 
     # --- Priority 4: failed missions ---
     for m in failed:
+        if len(plan) >= MAX_QUESTIONS:
+            break
         day = day_index.get(m.day)
         if not day:
             continue
@@ -283,38 +295,49 @@ def generate_question_plan(candidate: Candidate) -> List[InterviewQuestion]:
         days_covered.add(m.day)
 
     # --- Pad to minimum 8 questions if needed ---
-    # Pull easy-pass missions (attempts == 2) as padding
-    if len(plan) < 8:
-        easy_pass = [
-            m for m in candidate.missions
-            if m.passed is True and (m.attempts or 0) == 2
-        ]
-        for m in easy_pass:
-            if len(plan) >= 8:
+    if len(plan) < MIN_QUESTIONS:
+        # Use second depth-verify question from first-try days
+        for m in first_try[:2]:
+            if len(plan) >= MIN_QUESTIONS:
+                break
+            day = day_index.get(m.day)
+            if not day:
+                continue
+            qs = _depth_questions(day, m)
+            if len(qs) > 1:
+                plan.append(qs[1])  # second depth-verify question
+
+        # Use easy-pass missions (attempts == 2) as further padding
+        if len(plan) < MIN_QUESTIONS:
+            easy_pass = [
+                m for m in candidate.missions
+                if m.passed is True and (m.attempts or 0) == 2
+            ]
+            for m in easy_pass:
+                if len(plan) >= MIN_QUESTIONS:
+                    break
+                day = day_index.get(m.day)
+                if not day or m.day in days_covered:
+                    continue
+                probe = _struggle_questions(day, m)[0]
+                probe.text = (
+                    f"You passed **{day['title']}** (Day {m.day}) on your second attempt. "
+                    f"What adjustment did you make between attempt 1 and 2 that made the difference?"
+                )
+                plan.append(probe)
+                days_covered.add(m.day)
+
+        # Final fallback: extra first-try days
+        for m in first_try[2:]:
+            if len(plan) >= MIN_QUESTIONS:
                 break
             day = day_index.get(m.day)
             if not day or m.day in days_covered:
                 continue
-            probe, counter = _struggle_questions(day, m)[:2]
-            # Rewrite probe text for a 2-attempt context
-            probe.text = (
-                f"You passed **{day['title']}** (Day {m.day}) on your second attempt. "
-                f"What adjustment did you make between attempt 1 and 2 that made the difference?"
-            )
-            plan.append(probe)
-            plan.append(counter)
+            plan.append(_depth_questions(day, m)[0])
             days_covered.add(m.day)
 
-    # Safety: if still < 8, duplicate depth-verify from existing first-try days
-    remaining_first_try = [
-        m for m in first_try[3:]
-        if day_index.get(m.day)
-    ]
-    for m in remaining_first_try:
-        if len(plan) >= 8:
-            break
-        day = day_index.get(m.day)
-        plan.extend(_depth_questions(day, m))
-        days_covered.add(m.day)
+    # Hard cap at MAX_QUESTIONS to guarantee interview terminates on schedule
+    plan = plan[:MAX_QUESTIONS]
 
     return plan

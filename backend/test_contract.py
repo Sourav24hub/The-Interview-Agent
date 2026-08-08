@@ -78,7 +78,7 @@ def pretty(data):
     return json.dumps(data, indent=2)
 
 
-client = httpx.Client(base_url=BASE_URL, timeout=10)
+client = httpx.Client(base_url=BASE_URL, timeout=45.0)
 
 print("\n-- Health check ----------------------------------------------------------")
 r = client.get("/health")
