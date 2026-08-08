@@ -1,0 +1,75 @@
+# ============================================================
+# AI Interview Agent — .gitignore
+# ============================================================
+
+# --- Secrets & Environment ---
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+*.env
+
+# Keep the example template (safe to commit)
+!.env.example
+!backend/.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env.bak
+
+# Distribution / build
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Logs
+*.log
+logs/
+
+# --- Node.js / Frontend ---
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/
+dist/
+
+# Package lock (keep package.json, ignore lock if preferred)
+# package-lock.json
+
+# Vite cache
+.vite/
+frontend/.vite/
+
+# --- IDEs & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+
+# --- OS ---
+.DS_Store
+Desktop.ini
