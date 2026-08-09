@@ -4,7 +4,7 @@ import { InterviewChat } from './InterviewChat';
 import { FeedbackDashboard } from './FeedbackDashboard';
 import { FALLBACK_CANDIDATES } from './candidatesData';
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 export default function App() {
   const [screen, setScreen] = useState('select'); // 'select' | 'interview' | 'feedback'
@@ -209,6 +209,7 @@ export default function App() {
           onSendMessage={handleSendMessage}
           onEndInterview={handleEndInterview}
           onBackToSelect={() => setScreen('select')}
+          backendUrl={BACKEND_URL}
         />
       )}
 

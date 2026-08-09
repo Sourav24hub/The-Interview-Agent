@@ -10,7 +10,8 @@ export function InterviewChat({
   turnCount,
   onSendMessage,
   onEndInterview,
-  onBackToSelect
+  onBackToSelect,
+  backendUrl = 'http://localhost:8000'
 }) {
   const [inputText, setInputText] = useState('');
   const [mockLoading, setMockLoading] = useState(null); // tracks which button is loading
@@ -76,7 +77,7 @@ export function InterviewChat({
 
     setMockLoading(style);
     try {
-      const res = await fetch('http://localhost:8000/api/mock-answer', {
+      const res = await fetch(`${backendUrl}/api/mock-answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
