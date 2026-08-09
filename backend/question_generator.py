@@ -73,7 +73,9 @@ class InterviewQuestion:
 def _load_curriculum() -> dict:
     """Load curriculum.json from the project root (one level above backend/)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    curriculum_path = os.path.join(here, "..", "curriculum.json")
+    curriculum_path = os.path.join(here, "curriculum.json")
+    if not os.path.exists(curriculum_path):
+        curriculum_path = os.path.join(here, "..", "curriculum.json")
     with open(curriculum_path, encoding="utf-8") as fh:
         return json.load(fh)
 

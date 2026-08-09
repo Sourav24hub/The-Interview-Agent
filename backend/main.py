@@ -95,7 +95,9 @@ async def get_candidates():
     import json
     import os
     here = os.path.dirname(os.path.abspath(__file__))
-    candidates_path = os.path.join(here, "..", "candidates.json")
+    candidates_path = os.path.join(here, "candidates.json")
+    if not os.path.exists(candidates_path):
+        candidates_path = os.path.join(here, "..", "candidates.json")
     if os.path.exists(candidates_path):
         with open(candidates_path, encoding="utf-8") as fh:
             data = json.load(fh)
