@@ -282,34 +282,41 @@ def process_turn(session_id: str, candidate_message: str) -> tuple[str, bool]:
 
     # Attempt Live Groq Integration first (if enabled and key present)
     if is_groq_available() and not _MOCK_MODE_ENV:
+        # 1. Update the session state (advance topic or log probe attempt)
+        if not is_weak or already_probed:
+            advance_question(session_id)
+        else:
+            mark_current_q_probed(session_id)
+
+        new_idx = session["current_q_index"]
+        all_topics_done = new_idx >= len(plan)
+        turn_limit_hit = session["total_turns"] >= MAX_INTERVIEW_TURNS
+        is_done = all_topics_done or turn_limit_hit
+
+        # 2. Retrieve updated question context to guide the LLM's next turn
+        updated_q = plan[new_idx] if new_idx < len(plan) else None
+        topics_remaining = max(0, len(plan) - new_idx)
+
         groq_reply = generate_groq_turn_reply(
             session_id=session_id,
             candidate=candidate,
-            current_q=current_q,
+            current_q=updated_q,
             history=session["history"],
             latest_candidate_msg=candidate_message,
             q_number=q_number,
             topics_remaining=topics_remaining,
+            is_done=is_done,
         )
 
         if groq_reply:
-            if not is_weak or already_probed:
-                advance_question(session_id)
-            else:
-                # Mark topic as probed so the engine advances on the next turn (max 1 counter per topic)
-                mark_current_q_probed(session_id)
-
-            new_idx = session["current_q_index"]
-            all_topics_done = new_idx >= len(plan)
-            turn_limit_hit = session["total_turns"] >= MAX_INTERVIEW_TURNS
-
-            if all_topics_done or turn_limit_hit:
+            if is_done:
                 mark_done(session_id)
                 append_history(session_id, "interviewer", groq_reply)
                 return groq_reply, True
 
             append_history(session_id, "interviewer", groq_reply)
             return groq_reply, False
+
 
     # Fallback / Rule-Based Processing
     if session["total_turns"] >= MAX_INTERVIEW_TURNS:

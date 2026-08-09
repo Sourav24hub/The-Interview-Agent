@@ -59,7 +59,9 @@ INTERVIEWER CONDUCT & RULES:
 3. BALANCED PERSONA: Maintain a dry, probing, and slightly sharp persona. Acknowledge good answers dryly ("Fair point.", "Good practical application.") and push on vague answers ("Glad the tutorial worked, but how did you verify output quality?").
 4. STRICT SINGLE QUESTION RULE: You MUST end your turn with strictly ONE single, clear question. Never ask multiple questions in a single turn.
 5. CONCISE & CHUNKED: Keep your turn concise and readable (2-3 short sentences, 50-80 words max). Plain text only. No markdown headers or JSON wrappers.
+6. ADHERE TO TARGET TOPIC: Your current target topic is provided in 'CURRENT TARGET QUESTION CONTEXT'. When the target context shifts to a new day or topic, you MUST immediately pivot and ask the question based on the 'Base Question Prompt' provided, transitioning cleanly (e.g., 'Moving on to Day X...', 'Let's switch to...'). Do NOT continue drilling or asking follow-up questions on the old topic once the target context changes.
 """.strip()
+
 
 
 def _ensure_single_question(text: str) -> str:
@@ -160,6 +162,7 @@ def generate_groq_turn_reply(
     latest_candidate_msg: str,
     q_number: int,
     topics_remaining: int = 1,
+    is_done: bool = False,
 ) -> Optional[str]:
     """
     Generate an AI interviewer response turn using Groq API.
@@ -173,13 +176,20 @@ def generate_groq_turn_reply(
 
     # Inject session pacing so LLM knows when to wrap up
     pacing_note = ""
-    if topics_remaining <= 1:
+    if is_done:
+        pacing_note = (
+            "\nSESSION STATUS: The interview is now COMPLETE. "
+            "Acknowledge the candidate's last response dryly/briefly, and close the session. "
+            "Do NOT ask any more questions or introduce new topics."
+        )
+    elif topics_remaining <= 1:
         pacing_note = (
             "\nSESSION STATUS: This is the LAST topic. After evaluating the candidate's answer, "
             "briefly acknowledge and conclude the interview naturally. Do NOT ask another new topic question."
         )
     elif topics_remaining <= 2:
         pacing_note = f"\nSESSION STATUS: {topics_remaining} topics remaining. Start wrapping toward a conclusion."
+
 
     system_content = f"{GROQ_SYSTEM_PROMPT}\n\n{candidate_ctx}{pacing_note}"
 
@@ -213,6 +223,107 @@ def generate_groq_turn_reply(
             log.warning("[%s] Groq API model %s failed: %s. Trying next candidate model...", session_id, m, err)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Mock Candidate Answer Generator
+# ---------------------------------------------------------------------------
+
+_ANSWER_STYLE_PROMPTS = {
+    "detailed": (
+        "Give a DETAILED, technically strong answer. "
+        "Demonstrate depth with specific implementation details, tools used, decisions made, "
+        "trade-offs considered, and concrete outcomes. Sound like someone who genuinely built this. "
+        "2-4 sentences. First person, conversational but specific."
+    ),
+    "unsure": (
+        "Give an UNSURE answer. You remember some things but are fuzzy on specifics. "
+        "Show partial knowledge — you did the mission but some details are hazy. "
+        "Use hedging phrases like 'I think', 'if I remember correctly', 'something like that'. "
+        "2-3 sentences. Honest but hesitant."
+    ),
+    "wrong": (
+        "Give a WRONG or significantly confused answer. "
+        "Mix up concepts, misremember tools, or describe a completely incorrect approach. "
+        "Sound confident but clearly off-track. Do not correct yourself. "
+        "2-3 sentences. Plausible-sounding but technically incorrect."
+    ),
+    "vague": (
+        "Give a VAGUE, hand-wavy answer. "
+        "You completed the mission by following the tutorial but can't explain the 'why' or the mechanics. "
+        "Stick to surface-level descriptions. Use phrases like 'I just followed the steps', "
+        "'it worked fine', 'I used the standard approach'. 2-3 sentences. No technical depth."
+    ),
+}
+
+
+def generate_candidate_mock_answer(
+    candidate: "Candidate",
+    question_text: str,
+    answer_style: str,          # "detailed" | "unsure" | "wrong" | "vague"
+) -> Optional[str]:
+    """
+    Generate a contextual mock answer from the CANDIDATE'S perspective for a given question.
+    The LLM adopts the candidate's persona (role, experience, missions) and responds to the
+    specific question in the requested style.
+    Used by judges during hackathon demos to drive the interview flow without typing.
+    """
+    client, primary_model = get_groq_client()
+    if not client:
+        return None
+
+    style_instruction = _ANSWER_STYLE_PROMPTS.get(answer_style, _ANSWER_STYLE_PROMPTS["vague"])
+
+    # Build concise mission summary for persona grounding
+    missions_passed = [m for m in candidate.missions if m.passed is True]
+    missions_skipped = [m for m in candidate.missions if m.skipped]
+    missions_failed = [m for m in candidate.missions if m.passed is False]
+
+    mission_summary = (
+        f"{len(missions_passed)} missions passed "
+        f"({candidate.signals.missionsFirstTry} on first try), "
+        f"{len(missions_skipped)} skipped, "
+        f"{len(missions_failed)} failed."
+    )
+
+    system_prompt = (
+        f"You are roleplaying as {candidate.member.name}, a {candidate.member.jobRole} "
+        f"with {candidate.member.yearsExperience} year(s) of experience ({candidate.member.education}). "
+        f"You recently completed a 31-day AI cohort. Mission summary: {mission_summary} "
+        f"Commit days: {candidate.signals.commitDays}/31. "
+        f"\n\nYou are in a live technical interview. The interviewer just asked you a question. "
+        f"Respond in the FIRST PERSON as {candidate.member.name.split()[0]}. "
+        f"\n\nSTYLE INSTRUCTION: {style_instruction}"
+        f"\n\nIMPORTANT: Do NOT include the question in your response. Answer directly and naturally."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Interviewer question: {question_text}\n\nYour response:"},
+    ]
+
+    models_to_try = [primary_model, "llama-3.1-8b-instant", "llama3-70b-8192"]
+    models_to_try = list(dict.fromkeys(models_to_try))
+
+    for m in models_to_try:
+        try:
+            response = client.chat.completions.create(
+                model=m,
+                messages=messages,
+                temperature=0.85,
+                max_tokens=280,
+                timeout=25.0,
+            )
+            answer = response.choices[0].message.content.strip()
+            if answer:
+                log.info("Mock answer generated (style=%s, model=%s, candidate=%s).",
+                         answer_style, m, candidate.member.id)
+                return answer
+        except Exception as err:
+            log.warning("Mock answer model %s failed: %s. Trying next...", m, err)
+
+    return None
+
 
 
 

@@ -89,3 +89,14 @@ class InterviewResponse(BaseModel):
     reply: str
     done: bool
     feedback: Optional[FeedbackPayload] = None
+
+
+class MockAnswerRequest(BaseModel):
+    """Request body for POST /api/mock-answer."""
+    sessionId: str = Field(..., description="Active interview session ID")
+    question: str = Field(..., description="The interviewer's exact question text")
+    answerStyle: str = Field(
+        ...,
+        description="One of: 'detailed' | 'unsure' | 'wrong' | 'vague'"
+    )
+

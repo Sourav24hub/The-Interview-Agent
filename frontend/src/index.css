@@ -189,3 +189,9 @@ h1, h2, h3, h4 {
 .dot-bounce-1 { animation: typing-bounce 1.4s infinite ease-in-out 0s; }
 .dot-bounce-2 { animation: typing-bounce 1.4s infinite ease-in-out 0.2s; }
 .dot-bounce-3 { animation: typing-bounce 1.4s infinite ease-in-out 0.4s; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+

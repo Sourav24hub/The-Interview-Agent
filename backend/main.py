@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from models import InterviewRequest, InterviewResponse
+from models import InterviewRequest, InterviewResponse, MockAnswerRequest
 from session_store import (
     create_session,
     get_session,
@@ -32,6 +32,8 @@ from interview_engine import (
     build_feedback,
     MOCK_MODE,
 )
+from groq_service import generate_candidate_mock_answer
+
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -196,3 +198,54 @@ async def interview(body: InterviewRequest) -> InterviewResponse:
         return InterviewResponse(reply=reply_text, done=True, feedback=feedback)
 
     return InterviewResponse(reply=reply_text, done=False)
+
+
+# ---------------------------------------------------------------------------
+# Mock Answer Generator: POST /api/mock-answer
+# ---------------------------------------------------------------------------
+@app.post(
+    "/api/mock-answer",
+    tags=["interview"],
+    summary="Generate an AI-powered mock candidate answer for a given question",
+    description=(
+        "Judges use this endpoint during demos to generate realistic candidate answers "
+        "in 4 distinct styles (detailed / unsure / wrong / vague) "
+        "for any specific question the interviewer has just asked. "
+        "The LLM adopts the candidate's persona from their profile in the active session."
+    ),
+)
+async def mock_answer(body: MockAnswerRequest):
+    session = get_session(body.sessionId)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{body.sessionId}' not found. Start an interview first.",
+        )
+
+    valid_styles = {"detailed", "unsure", "wrong", "vague"}
+    if body.answerStyle not in valid_styles:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid answerStyle '{body.answerStyle}'. Must be one of: {valid_styles}",
+        )
+
+    candidate = session["candidate"]
+    log.info(
+        "[%s] Generating mock answer — style=%s candidate=%s",
+        body.sessionId, body.answerStyle, candidate.member.id
+    )
+
+    answer = generate_candidate_mock_answer(
+        candidate=candidate,
+        question_text=body.question,
+        answer_style=body.answerStyle,
+    )
+
+    if answer is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Mock answer generation failed — Groq API unavailable. Please retry.",
+        )
+
+    return {"answer": answer, "style": body.answerStyle, "candidateId": candidate.member.id}
+

@@ -13,6 +13,7 @@ export function InterviewChat({
   onBackToSelect
 }) {
   const [inputText, setInputText] = useState('');
+  const [mockLoading, setMockLoading] = useState(null); // tracks which button is loading
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -65,107 +66,74 @@ export function InterviewChat({
   const questionNumbers = getInterviewerQuestionNumbers();
 
 
-  // Helper to dynamically extract current topic/tool context and question phase
-  const getCurrentTopicContext = () => {
-    const lastInterviewerMsg = [...messages].reverse().find((m) => m.role === 'interviewer')?.text || '';
-    const candMsgCount = messages.filter((m) => m.role === 'candidate').length;
-    
-    let topicName = 'AI Cohort Mission';
-    let toolName = 'the core framework';
-    let isFollowUp = /chunk|state|concurrent|technique|specific|parameter|how did you|what data/i.test(lastInterviewerMsg);
+  // Generate AI-powered mock answer for the current question
+  const generateMockAnswer = async (style) => {
+    if (mockLoading || isThinking) return;
 
-    if (/embeddings|vector|chunk/i.test(lastInterviewerMsg)) {
-      topicName = 'Embeddings & Vector Databases';
-      toolName = 'ChromaDB & Sentence Transformers';
-    } else if (/rag|retrieval|hybrid/i.test(lastInterviewerMsg)) {
-      topicName = 'End-to-End RAG Architecture';
-      toolName = 'FastAPI & ChromaDB Hybrid Retriever';
-    } else if (/function|structured|pydantic|json/i.test(lastInterviewerMsg)) {
-      topicName = 'Function Calling & Structured Outputs';
-      toolName = 'OpenAI Tool Calls & Pydantic Schemas';
-    } else if (/agent|crew|langchain|react/i.test(lastInterviewerMsg)) {
-      topicName = 'Multi-Agent Orchestration';
-      toolName = 'CrewAI & LangChain ReAct Agents';
-    } else if (/docker|kubernetes|deploy|container/i.test(lastInterviewerMsg)) {
-      topicName = 'Docker & Container Deployment';
-      toolName = 'Dockerized FastAPI & Kubernetes Pods';
-    } else if (/fine-tuning|lora|qlora|peft/i.test(lastInterviewerMsg)) {
-      topicName = 'Fine-Tuning with QLoRA';
-      toolName = 'PEFT, Unsloth & HuggingFace Trainer';
-    }
+    // Extract the latest interviewer question text
+    const lastInterviewerMsg = [...messages].reverse().find((m) => m.role === 'interviewer');
+    if (!lastInterviewerMsg) return;
 
-    return { topicName, toolName, isFollowUp, lastInterviewerMsg, candMsgCount };
-  };
-
-  // Dynamic context-aware preset answers tailored to candidate role & topic depth
-  const getDynamicPresetAnswers = () => {
-    const { topicName, toolName, isFollowUp, candMsgCount } = getCurrentTopicContext();
-    const roleLower = candidate?.member?.jobRole?.toLowerCase() || '';
-    const isNonTech = /marketing|hr|human resources|business analyst|ux|design|product|it support/.test(roleLower);
-
-    if (isNonTech) {
-      return [
-        {
-          label: `🟢 Domain-Specific Application (${topicName})`,
-          text: `For ${topicName}, I focused on prompt design and output consistency. I structured the prompt to produce clear markdown responses that directly solved our team's workflow automation bottleneck.`
-        },
-        {
-          label: `🟡 Practical Workflow Detail`,
-          text: `I tested several prompt variations to make sure the AI chatbot handled edge cases gracefully and returned clean structured data for business reporting.`
-        },
-        {
-          label: `🔴 Basic Tutorial Output`,
-          text: `I used the standard prompt template from the cohort module and ran it against our sample data.`
-        },
-        {
-          label: `🔵 User Experience & Friction`,
-          text: `The main friction was prompt hallucination. I solved it by giving the model strict instructions to state 'Data not available' whenever context was missing.`
-        }
-      ];
-    }
-
-    if (isFollowUp || candMsgCount > 0) {
-      return [
-        {
-          label: `🟢 Deep Technical Detail (${topicName})`,
-          text: `For chunking and state management in ${topicName}, I used RecursiveCharacterTextSplitter with a 512 token window and 64 token overlap. State management under concurrency was handled via a Redis-backed distributed lock with optimistic locking to prevent race conditions.`
-        },
-        {
-          label: `🟡 Specific Implementation Choice`,
-          text: `I chose HNSW indexing in ChromaDB with cosine similarity metrics. To maintain low latency, I pre-filtered metadata tags before running the vector search.`
-        },
-        {
-          label: `🔴 Minimal Elaboration`,
-          text: `I used standard helper functions from the library and ran it using default memory settings.`
-        },
-        {
-          label: `🔵 Concurrency & Edge-Case Trade-off`,
-          text: `The main trade-off was memory footprint versus retrieval accuracy. Fixed-size chunking provided predictable RAM usage under load, but required semantic boundary checks to avoid truncating mid-sentence.`
-        }
-      ];
-    }
-
-    return [
-      {
-        label: `🟢 Detailed Technical Answer (${topicName})`,
-        text: `For ${topicName}, I built a production pipeline using ${toolName}. I handled chunking and state management explicitly, writing comprehensive integration tests to catch edge-case latency spikes.`
-      },
-      {
-        label: `🟡 Vague / Tutorial Answer`,
-        text: `For ${topicName}, I followed the standard cohort tutorial instructions and used default configuration parameters. It passed all tests cleanly.`
-      },
-      {
-        label: `🔴 Brief Hand-wave Answer`,
-        text: `I used ${toolName} to handle ${topicName} and it completed without any major issues.`
-      },
-      {
-        label: `🔵 Failure Trade-offs & Concurrency`,
-        text: `The biggest friction point in ${topicName} was memory overhead under concurrent load. I solved it by serializing context states and adding exponential backoff retries.`
+    setMockLoading(style);
+    try {
+      const res = await fetch('http://localhost:8000/api/mock-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          question: lastInterviewerMsg.text,
+          answerStyle: style,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInputText(data.answer || '');
+        // Focus textarea
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      } else {
+        console.error('Mock answer API error:', res.status);
       }
-    ];
+    } catch (err) {
+      console.error('Mock answer fetch failed:', err);
+    } finally {
+      setMockLoading(null);
+    }
   };
 
-  const dynamicPresets = getDynamicPresetAnswers();
+  const MOCK_BUTTONS = [
+    {
+      style: 'detailed',
+      label: '✅ Detailed Answer',
+      color: '#16a34a',
+      bg: '#f0fdf4',
+      border: '#86efac',
+      hoverBg: '#dcfce7',
+    },
+    {
+      style: 'unsure',
+      label: '🤔 Unsure Answer',
+      color: '#b45309',
+      bg: '#fffbeb',
+      border: '#fcd34d',
+      hoverBg: '#fef3c7',
+    },
+    {
+      style: 'wrong',
+      label: '❌ Wrong Answer',
+      color: '#dc2626',
+      bg: '#fef2f2',
+      border: '#fca5a5',
+      hoverBg: '#fee2e2',
+    },
+    {
+      style: 'vague',
+      label: '💭 Vague Answer',
+      color: '#7c3aed',
+      bg: '#faf5ff',
+      border: '#c4b5fd',
+      hoverBg: '#ede9fe',
+    },
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-light)' }}>
@@ -387,32 +355,68 @@ export function InterviewChat({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Dynamic Context-Aware Preset Answer Chips */}
+      {/* Dynamic AI Mock Answer Buttons */}
       <div style={{ maxWidth: '920px', width: '100%', margin: '0 auto', padding: '0 20px 10px 20px' }}>
         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
           <Sparkles size={14} color="var(--accent-indigo)" />
-          <span>Dynamic Mock Answers (Adapted to counter-question depth):</span>
+          <span>AI Candidate Mock Answers (Generates live answer matching candidate profile):</span>
         </div>
         <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-          {dynamicPresets.map((preset, idx) => (
-            <button
-              key={idx}
-              onClick={() => setInputText(preset.text)}
-              className="btn-secondary"
-              style={{
-                fontSize: '0.78rem',
-                padding: '6px 14px',
-                borderRadius: '16px',
-                whiteSpace: 'nowrap',
-                background: '#ffffff',
-                borderColor: '#cbd5e1',
-                color: 'var(--text-main)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-              }}
-            >
-              {preset.label}
-            </button>
-          ))}
+          {MOCK_BUTTONS.map((btn) => {
+            const isLoading = mockLoading === btn.style;
+            return (
+              <button
+                key={btn.style}
+                type="button"
+                onClick={() => generateMockAnswer(btn.style)}
+                disabled={isThinking || mockLoading !== null}
+                style={{
+                  fontSize: '0.8rem',
+                  padding: '8px 16px',
+                  borderRadius: '20px',
+                  whiteSpace: 'nowrap',
+                  background: btn.bg,
+                  borderColor: btn.border,
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  color: btn.color,
+                  cursor: (isThinking || mockLoading !== null) ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  opacity: (mockLoading !== null && !isLoading) ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseOver={(e) => {
+                  if (mockLoading === null && !isThinking) {
+                    e.currentTarget.style.background = btn.hoverBg;
+                  }
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = btn.bg;
+                }}
+              >
+                {isLoading ? (
+                  <>
+                    <span style={{
+                      width: '12px',
+                      height: '12px',
+                      border: `2px solid ${btn.color}`,
+                      borderTopColor: 'transparent',
+                      borderRadius: '50%',
+                      display: 'inline-block',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <span>{btn.label}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
